@@ -1,0 +1,132 @@
+WinBoard
+Copyright (C) 2026 Gorjan Jovanovski
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program.  If not, see <https://www.gnu.org/licenses/>.
+
+The full licence text is in LICENSE.
+
+
+================================================================================
+WHY GPL
+================================================================================
+
+WinBoard is the keyboard out of Windows Phone Launcher, split into an
+application of its own. That project is GPL-3.0 and this is a derivative work of
+it, so this is GPL-3.0 too. Nothing in this repository is the reason for the
+licence - the reason is where the code came from.
+
+The part of that project that made it GPL in the first place, a Kotlin port of
+SongRec's fingerprinting, is not here: it was the song recogniser, and a
+keyboard has no use for one.
+
+
+================================================================================
+WHAT THE LICENCE COVERS
+================================================================================
+
+The source code written for this project: everything under `app/src/`, the
+build scripts in `tools/`, and the Gradle configuration.
+
+It does not cover the artwork, fonts or data files described below. Those are
+not mine to license, and including them here is not a claim that they are. They
+are in the repository because this is a nostalgia project that recreates a
+particular keyboard, and it cannot do that without them.
+
+If you fork this, the code is yours under the GPL. The rest is between you and
+whoever owns it.
+
+
+================================================================================
+THIRD-PARTY MATERIAL IN THIS REPOSITORY
+================================================================================
+
+Fonts - app/src/main/res/font/
+    segoeui_*.ttf and tahoma.ttf are Microsoft typefaces. Microsoft owns them
+    and licenses them with Windows; they are neither mine to relicense nor
+    covered by the GPL grant above.
+
+Icons - app/src/main/assets/icons/
+    Nine Metro-style SVG icons - the shift arrow, the microphone, the
+    magnifier and the rest. The `appbar.*` file naming is that of the Modern UI
+    Icons set by Austin Andrews (modernuiicons.com); this has not been verified
+    against that project's terms, and anybody redistributing them should check
+    rather than take this file's word for it.
+
+    The same set is the source of the vector drawables in
+    app/src/main/res/drawable/ that name their origin in a comment.
+
+The Windows flag - app/src/main/res/drawable/win98_flag.xml
+    The Windows 98 logo - the flag and the dithered trail behind it - converted
+    from an SVG to a VectorDrawable. Worn by the `&123` key under the Windows 98
+    theme, and, on a key, the application icon. Microsoft's mark, like the rest
+    of the artwork here.
+
+Screenshots - docs/
+    Pictures of this application, taken in an emulator. Mine, and covered by the
+    licence above, except for the Microsoft artwork visible inside them.
+
+Emoji list - app/src/main/assets/keyboard/emoji.txt
+    Built by tools/emojibuild/build_emoji.py from Unicode's own
+    emoji-test.txt. Subject to the Unicode Terms of Use,
+    https://www.unicode.org/terms_of_use.html
+
+
+================================================================================
+THE WORD LISTS
+================================================================================
+
+Files:  app/src/main/assets/keyboard/en.trie
+        app/src/main/assets/keyboard/en.bigrams
+
+These are built by tools/dictbuild/ from word frequencies published by
+hermitdave/FrequencyWords, which are themselves counted from the OpenSubtitles
+corpus distributed through OPUS. Those frequency lists are licensed
+CC BY-SA 3.0, so these files are offered on the same terms:
+
+    Word frequencies from https://github.com/hermitdave/FrequencyWords
+    (OpenSubtitles, via OPUS), licensed CC BY-SA 3.0.
+    https://creativecommons.org/licenses/by-sa/3.0/
+
+English, the only list that currently ships, is additionally filtered against
+dwyl/english-words, which is public domain (Unlicense).
+
+tools/dictbuild/ can build the other twenty-one languages, and filters those
+against their Hunspell dictionaries from wooorm/dictionaries. Those dictionaries
+are read on the machine running the build and are never committed here or
+shipped in the app; their licences vary and six are GPL - Czech, German,
+Italian, Macedonian, Norwegian and Ukrainian. tools/dictbuild/build_dict.py
+names each one and its licence. Should those lists ever ship, they carry the
+same CC BY-SA 3.0 attribution as English does, for the same reason.
+
+
+================================================================================
+LIBRARIES
+================================================================================
+
+android-gif-drawable, by Karol Wrótniak / droidsonroids - MIT. Draws the
+animated GIFs in the GIF panel's grid.
+
+Vosk (com.alphacephei:vosk-android) - Apache 2.0, and JNA, which it reaches its
+native library through - Apache 2.0 / LGPL 2.1.
+
+
+================================================================================
+DOWNLOADED AT RUNTIME, NOT DISTRIBUTED HERE
+================================================================================
+
+Speech models for on-device dictation are fetched from alphacephei.com when a
+user first asks for offline dictation. They are Vosk's, under Apache 2.0, and
+are not part of this repository or of the APK.
+
+GIF search results come from GIPHY, with a key the user supplies. Nothing from
+GIPHY is redistributed here.

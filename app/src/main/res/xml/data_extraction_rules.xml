@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What leaves the phone, on Android 12 and up.
+
+  The settings file, and nothing else. `cloud-backup` is the copy that goes to the account;
+  `device-transfer` is the one handed straight to a new phone during setup, and both are
+  named because a rule given for one is not a rule for the other.
+
+  What is deliberately absent: `winboard_local.xml`, which holds the clipboard history and
+  the emoji recents, and the learned dictionary, which is in `noBackupFilesDir` and is
+  therefore out of reach of anything written here. A record of what somebody has typed is
+  the most private thing a keyboard holds, and a keyboard whose point is that typing stays on
+  the phone cannot be uploading it under another name.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="winboard.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="winboard.xml" />
+    </device-transfer>
+</data-extraction-rules>

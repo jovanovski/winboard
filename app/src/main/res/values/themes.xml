@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  There is very nearly no theme here, and that is deliberate.
+
+  Every colour on the settings page is set in code from KeyboardPalette, because the accent
+  and the light-or-dark are settings the user changes without the activity being recreated by
+  the system. What is left for a theme to do is the two things that cannot be set that way:
+  the window's own background, which is what shows for the instant before the page is drawn,
+  and the platform widgets' selection handles, which come from the theme whatever is done to
+  the EditText afterwards.
+
+  Not a Material theme: nothing in this app is a Material widget, and inheriting one only
+  brings in tinting that then has to be turned off again one attribute at a time.
+-->
+<resources>
+
+    <style name="Theme.WinBoard" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <!-- The page paints its own background immediately; this is what precedes it. -->
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+    </style>
+
+</resources>

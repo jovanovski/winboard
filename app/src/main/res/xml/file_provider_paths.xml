@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one directory another application is ever handed a file out of: the cache folder a
+  picked GIF is written into on its way to the field. See GifSearch and WinBoardService.sendGif.
+-->
+<paths>
+    <cache-path name="keyboard-gifs" path="keyboard-gifs/" />
+</paths>

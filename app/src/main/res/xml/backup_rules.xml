@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What Android's cloud backup may carry to a new phone, on Android 11 and below.
+
+  The settings, and nothing else. Everything in `winboard.xml` is a choice somebody made and
+  would otherwise have to make again; `winboard_local.xml` is the clipboard history and the
+  emoji recents, which belong to the phone they were made on. The learned dictionary is kept
+  out by a different means again - it lives in `noBackupFilesDir`, which needs no rule here
+  and cannot be undone by someone later editing this file. See `text/UserDictionary`.
+-->
+<full-backup-content>
+    <include domain="sharedpref" path="winboard.xml" />
+</full-backup-content>

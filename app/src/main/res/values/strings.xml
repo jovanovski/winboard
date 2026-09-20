@@ -1,0 +1,4 @@
+<resources>
+    <!-- What the launcher, Android's keyboard list and the language switcher all call it. -->
+    <string name="app_name">WinBoard</string>
+</resources>

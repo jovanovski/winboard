@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The application's mark: the Windows 98 logo, on one of that shell's own keys.
+
+  The flag is `@drawable/win98_flag`, the same file the `&123` key wears under the Windows 98
+  theme, so the icon and the key cannot drift apart.
+
+  The layer is given an explicit width and height rather than being inset to size. Insets
+  alone did not resize the drawing - they moved it, and left it floating at its own size in a
+  layer far larger than it. `android:width`/`android:height` with `gravity="center"` says the
+  size outright, which is what a mark inside a drawn key needs.
+
+  32 x 28dp on a 48 x 36dp key face, so it sits inside the bevel with a little air. The
+  proportions are the logo's own, because the trail makes it wider than it is tall and
+  squaring it would make it a different mark.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:drawable="@drawable/ic_launcher_key" />
+
+    <item
+        android:drawable="@drawable/win98_flag"
+        android:gravity="center"
+        android:width="32dp"
+        android:height="28dp" />
+</layer-list>

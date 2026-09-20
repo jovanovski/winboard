@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Dictation.
+
+      Asked for at the moment the microphone on the keyboard is first pressed, not on first
+      run - and asked for by a tiny Activity rather than by the keyboard, because an input
+      method has no Activity of its own and cannot raise a permission dialog. See
+      VoicePermissionActivity.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- A keystroke buzzes, for anyone who sets a strength rather than leaving it to the phone. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      Downloading a Vosk model for offline dictation, and searching GIPHY. Nothing else here
+      goes near the network: the word lists, the bigram tables and the emoji names are all in
+      the APK, and what is typed never leaves the phone.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      Which speech recogniser the phone has, so the keyboard can prefer the on-device one -
+      the one that does not send what you said anywhere - over the networked one. Without this
+      the query comes back empty on Android 11 and later and every phone looks like it has none.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.WinBoard"
+        tools:targetApi="34">
+
+        <!--
+          The settings, which are also the whole of the application.
+
+          A keyboard has no screen of its own to be opened, so this is what the icon in the
+          launcher leads to, and it is also what Android's own keyboard settings link to -
+          it is named as this input method's settingsActivity in res/xml/method.xml.
+
+          MAIN/LAUNCHER as well, deliberately. A keyboard that could only be configured from
+          inside Android's settings is one nobody would find twice, and the page is where the
+          two setup steps - turning WinBoard on, then choosing it - are explained.
+
+          adjustResize, because the page expects the keyboard it is configuring to be up
+          underneath it: that is what the test box is for.
+        -->
+        <activity
+            android:name=".keyboard.KeyboardSettingsActivity"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.WinBoard"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Asks for the microphone on the keyboard's behalf. Transparent, and on screen only
+          for as long as the system's own dialog. See VoicePermissionActivity.
+        -->
+        <activity
+            android:name=".keyboard.VoicePermissionActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
+        <!--
+          The keyboard itself.
+
+          One process for the whole app, unlike the launcher this came out of, where the
+          keyboard was pushed into a process of its own so that it was never the thread
+          waiting on itself to answer a question about the launcher's own text box. There is
+          no launcher here and nothing else in the app types into anything.
+        -->
+        <service
+            android:name=".keyboard.WinBoardService"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+        <!--
+          How a chosen GIF reaches the field it is being put into.
+
+          A field that takes image/gif is handed the file itself rather than its web address,
+          and a file in this app's cache is nothing another application may open without
+          being granted it one URI at a time. See WinBoardService.sendGif.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+    </application>
+
+</manifest>
