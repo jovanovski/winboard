@@ -145,16 +145,16 @@ fun KeyboardPalette.applyToField(field: EditText) {
     val bottom = field.paddingBottom
     field.background = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
-        setColor(Color.WHITE)
+        setColor(TextBox.FILL)
         setStroke(
-            (BORDER_DP * field.resources.displayMetrics.density).toInt(),
-            BORDER_ON_WHITE
+            (TextBox.BORDER_DP * field.resources.displayMetrics.density).toInt(),
+            TextBox.BORDER
         )
     }
     field.setPadding(left, top, right, bottom)
-    field.setTextColor(Color.BLACK)
-    field.setHintTextColor(HINT_ON_WHITE)
-    field.setTextCursorDrawable(caret(field, Color.BLACK))
+    field.setTextColor(TextBox.INK)
+    field.setHintTextColor(TextBox.HINT)
+    field.setTextCursorDrawable(caret(field, TextBox.INK))
     field.highlightColor = selection()
 }
 
@@ -212,9 +212,30 @@ private fun KeyboardPalette.selection(): Int =
 /** How thick the caret is. Two device pixels was hairline on a modern screen. */
 private const val CARET_WIDTH_DP = 2f
 
-/** Grey enough to read as a prompt on the field's white, dark enough to read at all. */
-private val HINT_ON_WHITE = Color.argb(140, 0, 0, 0)
+/**
+ * What a text box is made of, for the one place that cannot be handed an [EditText].
+ *
+ * [applyToField] is the way to get these onto a real field and is what almost everything
+ * uses. The emoji panel's search box is the exception: an input method cannot type into a
+ * field of its own - see `EmojiPanel.SearchBarView` - so its box is a rectangle painted by
+ * hand, and it has to be painted in exactly these colours rather than in ones that merely
+ * look close. Two kinds of text box in one shell is the thing this file exists to prevent.
+ */
+internal object TextBox {
 
-/** The field's own edge, and how thick it is. Grey under either setting. */
-private val BORDER_ON_WHITE = Color.argb(255, 130, 130, 130)
-private const val BORDER_DP = 2f
+    @ColorInt
+    val FILL = Color.WHITE
+
+    /** What is written in it once there is something to write. */
+    @ColorInt
+    val INK = Color.BLACK
+
+    /** Grey enough to read as a prompt on the field's white, dark enough to read at all. */
+    @ColorInt
+    val HINT = Color.argb(140, 0, 0, 0)
+
+    /** The field's own edge, and how thick it is. Grey under either setting. */
+    @ColorInt
+    val BORDER = Color.argb(255, 130, 130, 130)
+    const val BORDER_DP = 2f
+}

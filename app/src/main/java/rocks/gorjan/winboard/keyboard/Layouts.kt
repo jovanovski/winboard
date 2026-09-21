@@ -19,13 +19,6 @@ object Layouts {
 
 
     /**
-     * The bottom row, which is the same on every layout including the symbol pages.
-     *
-     * The ellipsis that marks the settings hold sits in a key's top-left corner, which is the
-     * same corner and the same grey the top row's numbers use - so it is set as a hint rather
-     * than invented as a second kind of mark.
-     */
-    /**
      * The two shoulder keys either end of a row, and why they are not round numbers.
      *
      * Measured off the phone: `&123` and shift come out 99 pixels wide against a 61 pixel
@@ -111,7 +104,15 @@ object Layouts {
      */
     private const val LEADING_SHARE = SIDE_KEY / (SIDE_KEY + ENTER_KEY)
 
-    private fun spaceRow(columns: Float) = Row(
+    /**
+     * The bottom row: `&123`, a comma, the space bar, a full stop, enter.
+     *
+     * [left] and [right] are the two keys either side of the space bar. They are the comma
+     * and the full stop on every layout but the second symbol page, which puts `<` and `>`
+     * there - see [SYMBOLS_2]. Only those two characters move: the holds stay where they
+     * are, because emoji and the settings are reached the same way whichever page is up.
+     */
+    private fun spaceRow(columns: Float, left: String = ",", right: String = ".") = Row(
         listOf(
             Key(
                 label = SYMBOLS_LABEL, span = SIDE_KEY, style = Style.FUNCTION,
@@ -119,7 +120,12 @@ object Layouts {
             ),
             // Comma and emoji on one key, marked with a smiley in the corner the way the
             // number row marks its digits. See [Key.holdAction].
-            Key(output = ",", holdAction = Action.EMOJI, contextual = true),
+            //
+            // Contextual only while it is the comma - see [Key.contextual]. That key changes
+            // to suit the field because a comma is the least useful thing an address field
+            // could have there; `<` is on the page somebody went looking for it on, and a
+            // field has no opinion about it.
+            Key(output = left, holdAction = Action.EMOJI, contextual = left == ","),
             // Space takes whatever the row has left, so the same bottom row fills a ten
             // column layout and a twelve column one without either being written out twice.
             Key(
@@ -135,7 +141,7 @@ object Layouts {
             // so a hold on it had already thrown the letters away and swapped in a page
             // nobody asked for before the settings ever opened. The full stop does nothing
             // until the finger comes up, which is what a key carrying a hold has to do.
-            Key(output = ".", hint = "\u2026", holdAction = Action.SETTINGS),
+            Key(output = right, hint = "\u2026", holdAction = Action.SETTINGS),
             Key(span = ENTER_KEY, style = Style.FUNCTION, action = Action.ENTER)
         ),
         heightScale = BOTTOM_ROW_SCALE
@@ -447,6 +453,13 @@ object Layouts {
      * on this page anybody types often. It was missing entirely for a while - the row had
      * `§` on the end instead, which is a symbol almost nobody reaches for and was not
      * worth the only percent sign on the keyboard.
+     *
+     * `<` and `>` are the other two that were missing, and they are on the bottom row rather
+     * than in the overflow above it: this page is already full, and the comma and full stop
+     * beside the space bar are the one pair of keys on it that nothing needs. They are behind
+     * the shift of those same two keys on a real keyboard, so the place is the one somebody
+     * reaches for anyway - and the first page, which is the one a sentence is typed from,
+     * keeps its punctuation untouched. See [spaceRow].
      */
     val SYMBOLS_2 = KeyboardLayout(
         id = "symbols_2",
@@ -460,7 +473,7 @@ object Layouts {
                     symbols("%©®™✓[]") +
                     listOf(BACKSPACE)
             ),
-            spaceRow(10f)
+            spaceRow(10f, left = "<", right = ">")
         )
     )
 

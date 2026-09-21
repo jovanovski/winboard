@@ -2624,11 +2624,20 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
         }
     }
 
-    /** The search bar was tapped: from here, letters build a query rather than a word. */
+    /**
+     * The search bar was tapped: from here, letters build a query rather than a word.
+     *
+     * Whatever is already in the box stays in it. The tap used to clear it, which made the
+     * box the one piece of text on the keyboard that a touch destroyed - and the query is
+     * exactly what somebody is looking at when they reach for it, either to carry on typing
+     * it or because a tap on the results scrolled the search out from under them. Backspace
+     * takes it back a letter at a time, the way it does everywhere else; see
+     * [routeToEmojiSearch]. Opening the panel afresh is what starts an empty search, and
+     * [showEmoji] already clears it for that.
+     */
     private fun startEmojiSearch() {
         val panel = emoji ?: return
         searchingEmoji = true
-        panel.query = ""
         // The keys come back underneath, and the panel shrinks to leave room for them. An
         // input method cannot type into a text box of its own, so without this the search bar
         // is a picture of a search bar.

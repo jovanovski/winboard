@@ -30,6 +30,7 @@ import rocks.gorjan.winboard.SvgIcon
 import rocks.gorjan.winboard.TiltEffect
 import rocks.gorjan.winboard.KeyboardPalette
 import rocks.gorjan.winboard.KeyboardSettings
+import rocks.gorjan.winboard.TextBox
 import kotlin.math.floor
 
 /**
@@ -326,6 +327,32 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         glyph = backspaceIcon
     }
 
+    /**
+     * What the keyboard is made of. See [KeyboardTheme].
+     *
+     * The panel takes the theme's colours through the palette like everything else and needs
+     * to be told two things it cannot work out: what the ground under it actually is - see
+     * `KeyboardView.groundColour`, which the panel has always had to match because it stands
+     * in the keyboard's place - and that its three keys are the same kind of key as the ones
+     * they replace.
+     *
+     * Declared above [init] rather than with the rest of the public surface below it.
+     * `init` calls [applyPalette], which reads this through [ground], and a property
+     * initialiser that has not run yet leaves its field null however non-null the type
+     * says it is - which is a crash on opening the panel, not a wrong colour. Every
+     * other view that carries a theme declares it above its own `init` for this reason.
+     */
+    var theme: KeyboardTheme = KeyboardTheme.PHONE
+        set(value) {
+            if (field == value) return
+            field = value
+            setBackgroundColor(ground())
+            abcKey.theme = value
+            gifKey.theme = value
+            backspaceKey.theme = value
+            invalidate()
+        }
+
     init {
         addView(searchBar)
         addView(grid)
@@ -361,26 +388,6 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         gifGrid.release()
     }
 
-    /**
-     * What the keyboard is made of. See [KeyboardTheme].
-     *
-     * The panel takes the theme's colours through the palette like everything else and needs
-     * to be told two things it cannot work out: what the ground under it actually is - see
-     * `KeyboardView.groundColour`, which the panel has always had to match because it stands
-     * in the keyboard's place - and that its three keys are the same kind of key as the ones
-     * they replace.
-     */
-    var theme: KeyboardTheme = KeyboardTheme.PHONE
-        set(value) {
-            if (field == value) return
-            field = value
-            setBackgroundColor(ground())
-            abcKey.theme = value
-            gifKey.theme = value
-            backspaceKey.theme = value
-            invalidate()
-        }
-
     /** The panel's own ground, which is the keyboard's. */
     private fun ground(): Int =
         if (theme.drawsKeys) palette.background else blend(GROUND_ALPHA)
@@ -388,7 +395,6 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
     fun applyPalette(p: KeyboardPalette) {
         palette = p
         setBackgroundColor(ground())
-        magnifyIcon?.setTint(palette.foregroundSubtle)
         searchBar.applyPalette()
         grid.applyPalette()
         abcKey.applyPalette(p)
@@ -631,9 +637,32 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         private val magnify = ImageView(context)
         private val label = TextView(context)
 
-        /** Half a gutter: what the fill is held in from the view's bounds. See [configure]. */
+        /** Half a gutter: what the box is held in from the view's left and right. */
         private var inset = 0f
-        private val fill = Paint()
+
+        /**
+         * How tall the box is, which is not how tall the row is.
+         *
+         * The control row is [CONTROL_ROW_FRACTION] of a key - it stands in for the
+         * suggestion bar - and a text box drawn to fill it is three times the height of the
+         * magnifier and the word inside it, which reads as a white slab with something
+         * small adrift in the middle rather than as a field. So the box takes the height its
+         * contents actually need, [BAR_PAD_FRACTION] either side of them, and is centred in
+         * whatever is left. The phone's own search boxes were the same: a band across the
+         * page, not a panel.
+         */
+        private var boxH = 0f
+
+        private val fill = Paint().apply { color = TextBox.FILL }
+
+        /**
+         * The edge round the fill. See [TextBox] - the fill alone is enough on a dark
+         * keyboard and vanishes on a light one, where white on white is not a box at all.
+         */
+        private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = TextBox.BORDER
+        }
 
         init {
             orientation = HORIZONTAL
@@ -667,35 +696,58 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         fun configure(keyW: Float, gap: Float) {
             val pad = (keyW * BAR_PAD_FRACTION).toInt()
             val icon = (keyW * BAR_ICON_FRACTION).toInt()
-            // Half a gutter of padding all round, and the fill drawn inside it, so the box
-            // comes out exactly the size of the keys either side of it. A KeyView paints its
-            // face inset by half a gutter and this did not, which made the search box a
-            // gutter taller than `abc` and backspace and left it looking oversized next to
-            // them - the two are measured to the same height and only looked different.
+            // Half a gutter in from the left and right, so the box lines up with the faces of
+            // `abc` and backspace either side of it: a KeyView paints its face inset by half
+            // a gutter, and a box drawn to the full width would overhang both of them.
             inset = gap / 2f
-            setPadding(pad, inset.toInt(), pad, inset.toInt())
+            boxH = (icon + pad * 2).toFloat()
+            edge.strokeWidth = TextBox.BORDER_DP * resources.displayMetrics.density
+            // Horizontal only. The row is taller than the box and the box is centred in it -
+            // see [boxH] - so vertical padding here would push the contents off the centre
+            // the box is drawn around. `gravity` already centres them.
+            //
+            // Measured from the box's edge rather than the view's, which is what `inset`
+            // adds: the padding that matters is the gap between the border and the
+            // magnifier, and that is what somebody looking at it sees.
+            setPadding(inset.toInt() + pad, 0, inset.toInt() + pad, 0)
             magnify.layoutParams = LayoutParams(icon, icon).apply { marginEnd = pad }
             label.setTextSize(TypedValue.COMPLEX_UNIT_PX, keyW * BAR_TEXT_FRACTION)
             refresh()
         }
 
+        /**
+         * Nothing of the keyboard's own colours reaches this box, which is the point.
+         *
+         * A text box on Windows Phone is white with black in it whichever way the light and
+         * dark setting is thrown - see [TextBox] - so the palette changing underneath is a
+         * change this one control does not answer. Only the magnifier is touched, and only
+         * because it is a shared drawable that would otherwise be left the keyboard's
+         * foreground colour and disappear into the fill.
+         */
         fun applyPalette() {
-            fill.color = blend(FUNCTION_ALPHA)
+            magnifyIcon?.setTint(TextBox.HINT)
             refresh()
             invalidate()
         }
 
         override fun onDraw(canvas: Canvas) {
-            canvas.drawRect(inset, inset, width - inset, height - inset, fill)
+            val top = (height - boxH) / 2f
+            val bottom = top + boxH
+            canvas.drawRect(inset, top, width - inset, bottom, fill)
+            // Half the stroke in from the fill's edge, so the border is drawn inside the box
+            // rather than straddling it - a stroke centred on the line would put half its
+            // width over the keyboard outside and make the box a stroke wider than it is.
+            val half = edge.strokeWidth / 2f
+            canvas.drawRect(inset + half, top + half, width - inset - half, bottom - half, edge)
         }
 
         fun refresh() {
             if (query.isEmpty()) {
                 label.text = if (mode == Mode.GIF) GIF_PLACEHOLDER else SEARCH_PLACEHOLDER
-                label.setTextColor(palette.foregroundSubtle)
+                label.setTextColor(TextBox.HINT)
             } else {
                 label.text = query
-                label.setTextColor(palette.foreground)
+                label.setTextColor(TextBox.INK)
             }
         }
     }
@@ -1219,9 +1271,6 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
          * picture too small to recognise is not a choice being offered.
          */
         const val SEARCH_MAX_SHARE = 0.8f
-
-        /** A function key's fill, reused for the search bar so it reads as a control. */
-        const val FUNCTION_ALPHA = 0.302f
 
         /** The search bar: its icons, its padding, its text - all fractions of one key's width. */
         const val BAR_ICON_FRACTION = 0.40f
