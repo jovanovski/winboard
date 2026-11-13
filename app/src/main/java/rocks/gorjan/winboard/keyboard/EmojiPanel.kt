@@ -7,7 +7,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
-import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
@@ -41,7 +40,12 @@ import kotlin.math.floor
  * `private` is per class body - a class nested in one of the two would not be visible to
  * the other.
  */
-private data class EmojiSection(val label: String?, val icon: Drawable?, val items: List<Emoji>)
+private data class EmojiSection(
+    val label: String?,
+    val items: List<Emoji>,
+    /** Whether the header carries a cross that empties the section. Only Recent does. */
+    val clearable: Boolean = false
+)
 
 /**
  * One drawn row of [EmojiPanel]'s grid: a section header, or a run of cells up to `columns`
@@ -50,8 +54,9 @@ private data class EmojiSection(val label: String?, val icon: Drawable?, val ite
  * [EmojiPanel], so this sits beside it instead, private to the file both are built from.
  */
 private sealed class EmojiRow {
-    data class Header(val label: String, val icon: Drawable?) : EmojiRow()
-    data class Items(val items: List<Emoji>) : EmojiRow()
+    data class Header(val label: String, val clearable: Boolean) : EmojiRow()
+    /** [recent] rows answer a hold by removing the emoji held rather than offering shades. */
+    data class Items(val items: List<Emoji>, val recent: Boolean = false) : EmojiRow()
 }
 
 /**
@@ -97,6 +102,19 @@ private class RecentEmoji(context: Context) {
         pending.clear()
     }
 
+    /** Forgets every recent, written and pending alike. */
+    fun clear() {
+        pending.clear()
+        prefs.edit().remove(KEY).apply()
+    }
+
+    /** Forgets one recent. */
+    fun remove(glyph: String) {
+        pending.remove(glyph)
+        val kept = list().filter { it != glyph }
+        prefs.edit().putString(KEY, kept.joinToString(DELIMITER)).apply()
+    }
+
     /** Picked since the panel was opened, most recent first. */
     private val pending = mutableListOf<String>()
 
@@ -108,7 +126,8 @@ private class RecentEmoji(context: Context) {
         // is safe as a plain join delimiter without a real serialisation format behind it.
         const val DELIMITER = "\u0001"
 
-        const val MAX = 30
+        /** Two rows of the grid. */
+        const val MAX = 16
     }
 }
 
@@ -197,12 +216,10 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
     //
     // Read once, here, for the reason given on KeyboardView's own `glyphs` map: SvgIcon
     // re-parses its file on every call, so a panel that fetched one per draw would be
-    // parsing XML in the input path. Three of them cover everything drawn: search leads with
-    // a magnifying glass, Recent is headed by a clock the way the phone's own history lists
-    // were, and a search with nothing in it is answered by the same smiley the keyboard's own
-    // emoji key wears.
+    // parsing XML in the input path. Two of them cover everything drawn: search leads with
+    // a magnifying glass, and a search with nothing in it is answered by the same smiley the
+    // keyboard's own emoji key wears.
     private val magnifyIcon = SvgIcon.fromAsset(context, "$ICONS/appbar.magnify.svg")?.mutate()
-    private val clockIcon = SvgIcon.fromAsset(context, "$ICONS/appbar.clock.svg")?.mutate()
     private val smileyIcon = SvgIcon.fromAsset(context, "$ICONS/appbar.smiley.happy.svg")?.mutate()
     private val backspaceIcon = context.getDrawable(R.drawable.kb_backspace)?.mutate()
 
@@ -545,20 +562,32 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
             return if (matches.isEmpty()) {
                 emptyList<EmojiSection>() to NO_MATCHES_MESSAGE
             } else {
-                listOf(EmojiSection(null, null, matches)) to null
+                listOf(EmojiSection(null, matches)) to null
             }
         }
 
         val sections = mutableListOf<EmojiSection>()
         val recent = recents.list().mapNotNull(data::find)
-        if (recent.isNotEmpty()) sections.add(EmojiSection(RECENT_LABEL, clockIcon, recent))
+        if (recent.isNotEmpty()) sections.add(EmojiSection(RECENT_LABEL, recent, clearable = true))
         for (i in 0 until EmojiCategories.COUNT) {
             // The collapsed buckets, not the raw ones: a family of skin tones is one cell
             // with a corner mark on it, and the rest are a hold away. See [EmojiData.bases].
             val bucket = data.bases.getOrNull(i) ?: continue
-            if (bucket.isNotEmpty()) sections.add(EmojiSection(EmojiCategories.LABELS[i], null, bucket))
+            if (bucket.isNotEmpty()) sections.add(EmojiSection(EmojiCategories.LABELS[i], bucket))
         }
         return sections to (if (sections.isEmpty()) NO_EMOJI_MESSAGE else null)
+    }
+
+    /** A recent was held: it goes from the list. */
+    private fun removeRecent(emoji: Emoji) {
+        recents.remove(emoji.glyph)
+        refreshGrid()
+    }
+
+    /** The cross on the Recent header was tapped. */
+    private fun clearRecents() {
+        recents.clear()
+        refreshGrid()
     }
 
     private fun refreshGrid() {
@@ -640,18 +669,8 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         /** Half a gutter: what the box is held in from the view's left and right. */
         private var inset = 0f
 
-        /**
-         * How tall the box is, which is not how tall the row is.
-         *
-         * The control row is [CONTROL_ROW_FRACTION] of a key - it stands in for the
-         * suggestion bar - and a text box drawn to fill it is three times the height of the
-         * magnifier and the word inside it, which reads as a white slab with something
-         * small adrift in the middle rather than as a field. So the box takes the height its
-         * contents actually need, [BAR_PAD_FRACTION] either side of them, and is centred in
-         * whatever is left. The phone's own search boxes were the same: a band across the
-         * page, not a panel.
-         */
-        private var boxH = 0f
+        /** The gutter, so the box can be inset top and bottom the way a key's face is. */
+        private var faceGap = 0f
 
         private val fill = Paint().apply { color = TextBox.FILL }
 
@@ -700,11 +719,10 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
             // `abc` and backspace either side of it: a KeyView paints its face inset by half
             // a gutter, and a box drawn to the full width would overhang both of them.
             inset = gap / 2f
-            boxH = (icon + pad * 2).toFloat()
+            faceGap = gap
             edge.strokeWidth = TextBox.BORDER_DP * resources.displayMetrics.density
-            // Horizontal only. The row is taller than the box and the box is centred in it -
-            // see [boxH] - so vertical padding here would push the contents off the centre
-            // the box is drawn around. `gravity` already centres them.
+            // Horizontal only. The box is inset equally top and bottom, so `gravity` already
+            // centres the contents in it.
             //
             // Measured from the box's edge rather than the view's, which is what `inset`
             // adds: the padding that matters is the gap between the border and the
@@ -731,8 +749,11 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         }
 
         override fun onDraw(canvas: Canvas) {
-            val top = (height - boxH) / 2f
-            val bottom = top + boxH
+            // As tall as the faces of `abc`, `gif` and backspace beside it: a KeyView insets
+            // its face by half a gutter on every side, so the box does the same top and
+            // bottom. Sized to its contents it sat noticeably shorter than its neighbours.
+            val top = faceGap / 2f
+            val bottom = height - top
             canvas.drawRect(inset, top, width - inset, bottom, fill)
             // Half the stroke in from the fill's edge, so the border is drawn inside the box
             // rather than straddling it - a stroke centred on the line would put half its
@@ -788,6 +809,10 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         private var downY = 0f
         private var downScroll = 0f
         private var downCell: Pair<Int, Int>? = null
+        private var downOnClear = false
+
+        /** A hold already did something with this touch, so lifting the finger must not. */
+        private var holdSpent = false
         private var highlighted: Pair<Int, Int>? = null
         private var velocityTracker: VelocityTracker? = null
         private val scroller = OverScroller(context)
@@ -804,6 +829,10 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
          */
         private val mark = Paint(Paint.ANTI_ALIAS_FLAG)
         private val corner = Path()
+        private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+        }
         private val bounds = Rect()
         private val headerFont = ResourcesCompat.getFont(context, R.font.segoeui_semibold)
         private val bodyFont = ResourcesCompat.getFont(context, R.font.segoeui_regular)
@@ -841,7 +870,6 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         }
 
         fun applyPalette() {
-            clockIcon?.setTint(palette.foregroundSubtle)
             smileyIcon?.setTint(palette.foregroundSubtle)
             variants.applyPalette(palette)
             invalidate()
@@ -892,10 +920,10 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
 
             val built = mutableListOf<EmojiRow>()
             for (section in sections) {
-                if (section.label != null) built.add(EmojiRow.Header(section.label, section.icon))
+                if (section.label != null) built.add(EmojiRow.Header(section.label, section.clearable))
                 var i = 0
                 while (i < section.items.size) {
-                    built.add(EmojiRow.Items(section.items.subList(i, minOf(i + columns, section.items.size))))
+                    built.add(EmojiRow.Items(section.items.subList(i, minOf(i + columns, section.items.size)), section.clearable))
                     i += columns
                 }
             }
@@ -925,6 +953,18 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
                 y += h
             }
             return null
+        }
+
+        /** Whether [x], [yContent] lands on the cross of a clearable header. */
+        private fun clearAt(x: Float, yContent: Float): Boolean {
+            if (x < width - headerHeight * CLEAR_TARGET_HEADERS) return false
+            var y = 0f
+            for (row in rows) {
+                val h = if (row is EmojiRow.Header) headerHeight else cellPitch
+                if (yContent >= y && yContent < y + h) return row is EmojiRow.Header && row.clearable
+                y += h
+            }
+            return false
         }
 
         private fun emojiAt(cell: Pair<Int, Int>): Emoji? =
@@ -957,6 +997,16 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         private fun openVariants() {
             val cell = downCell ?: return
             val emoji = emojiAt(cell) ?: return
+            if ((rows.getOrNull(cell.first) as? EmojiRow.Items)?.recent == true) {
+                // On Recent a hold takes the emoji off the list instead of offering shades:
+                // the shade there is the one that was used, and the full family is a hold
+                // away in its own category.
+                KeyboardHaptics.tap(this)
+                holdSpent = true
+                highlighted = null
+                removeRecent(emoji)
+                return
+            }
             val family = data.variantsOf(emoji.glyph)
             if (family.size < 2) return
             KeyboardHaptics.tap(this)
@@ -984,6 +1034,8 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
                     downScroll = scrollOffset
                     dragging = false
                     downCell = cellAt(event.x, event.y + scrollOffset)
+                    downOnClear = clearAt(event.x, event.y + scrollOffset)
+                    holdSpent = false
                     highlighted = downCell
                     if (downCell != null) postDelayed(holdCheck, LONG_PRESS)
                     invalidate()
@@ -1033,7 +1085,9 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
                         endTouch()
                         return true
                     }
-                    if (dragging) {
+                    if (holdSpent) {
+                        // Already answered by the hold - see [openVariants].
+                    } else if (dragging) {
                         velocityTracker?.addMovement(event)
                         velocityTracker?.computeCurrentVelocity(1000)
                         val flingV = -(velocityTracker?.yVelocity ?: 0f)
@@ -1042,6 +1096,10 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
                             0, 0, 0, maxScroll.toInt()
                         )
                         postInvalidateOnAnimation()
+                    } else if (downOnClear && clearAt(event.x, event.y + scrollOffset)) {
+                        KeyboardHaptics.key(this)
+                        KeyboardSounds.tap()
+                        clearRecents()
                     } else {
                         val cell = cellAt(event.x, event.y + scrollOffset)
                         if (cell != null && cell == downCell) {
@@ -1069,6 +1127,8 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
             removeCallbacks(holdCheck)
             dragging = false
             downCell = null
+            downOnClear = false
+            holdSpent = false
             highlighted = null
             velocityTracker?.recycle()
             velocityTracker = null
@@ -1113,18 +1173,23 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
 
         private fun drawHeader(canvas: Canvas, row: EmojiRow.Header, y: Float) {
             val pad = unitW * HEADER_PAD_FRACTION
-            var x = pad
-            row.icon?.let {
-                val side = (headerHeight * HEADER_ICON_FRACTION).toInt()
-                val top = (y + (headerHeight - side) / 2f).toInt()
-                it.setBounds(x.toInt(), top, x.toInt() + side, top + side)
-                it.draw(canvas)
-                x += side + pad / 2f
-            }
             headerInk.color = palette.foregroundSubtle
             headerInk.textAlign = Paint.Align.LEFT
             headerInk.getTextBounds(row.label, 0, row.label.length, bounds)
-            canvas.drawText(row.label, x, y + headerHeight / 2f - (bounds.top + bounds.bottom) / 2f, headerInk)
+            canvas.drawText(row.label, pad, y + headerHeight / 2f - (bounds.top + bounds.bottom) / 2f, headerInk)
+            if (row.clearable) drawCross(canvas, width - pad - headerHeight / 2f, y + headerHeight / 2f)
+        }
+
+        /**
+         * The cross that empties Recent, drawn as two strokes rather than a character so it
+         * is the same shape in every font and centred exactly on the header's middle.
+         */
+        private fun drawCross(canvas: Canvas, cx: Float, cy: Float) {
+            val half = headerHeight * CLEAR_FRACTION / 2f
+            cross.color = palette.foregroundSubtle
+            cross.strokeWidth = unitW * CLEAR_STROKE_FRACTION
+            canvas.drawLine(cx - half, cy - half, cx + half, cy + half, cross)
+            canvas.drawLine(cx - half, cy + half, cx + half, cy - half, cross)
         }
 
         private fun drawItems(canvas: Canvas, row: EmojiRow.Items, y: Float, rowIndex: Int) {
@@ -1280,7 +1345,15 @@ internal class EmojiPanel(context: Context, private var palette: KeyboardPalette
         /** A section header's height and text size, and how much of the height its icon fills. */
         const val HEADER_FRACTION = 0.46f
         const val HEADER_TEXT_FRACTION = 0.30f
-        const val HEADER_ICON_FRACTION = 0.62f
+
+        /**
+         * The cross on the Recent header: how much of the header's height it spans, its
+         * stroke as a fraction of a key, and how many header-heights in from the right edge
+         * count as a tap on it - wider than the cross itself, because it is small.
+         */
+        const val CLEAR_FRACTION = 0.42f
+        const val CLEAR_STROKE_FRACTION = 0.035f
+        const val CLEAR_TARGET_HEADERS = 2.5f
         const val HEADER_PAD_FRACTION = 0.18f
 
         /** How large an emoji is drawn inside its own cell. */

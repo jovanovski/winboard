@@ -111,7 +111,12 @@ internal object ClipboardStore {
             ?.take(MAX_LENGTH)
             ?: return
 
-        remember(context, Clip(text, System.currentTimeMillis(), isSensitive(description)))
+        // When it was actually copied, which the system records, rather than when this
+        // happened to read it: a clip copied ten minutes ago while the keyboard was down is
+        // not "just copied" because the keyboard has only now come up. Zero means unknown.
+        val now = System.currentTimeMillis()
+        val copiedAt = description?.timestamp?.takeIf { it in 1..now } ?: now
+        remember(context, Clip(text, copiedAt, isSensitive(description)))
     }
 
     /**

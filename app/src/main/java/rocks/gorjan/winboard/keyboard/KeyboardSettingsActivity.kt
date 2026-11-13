@@ -60,6 +60,14 @@ class KeyboardSettingsActivity : Activity() {
     private lateinit var vibrationValue: TextView
     private lateinit var keyHeightValue: TextView
 
+    /** Which page this is: the main one, or one of [PAGE_THEME], [PAGE_ACCENT], [PAGE_LANGUAGES]. */
+    private val pageId: String? get() = intent.getStringExtra(EXTRA_PAGE)
+
+    /** What the main page's three links say under their titles, refreshed on the way back. */
+    private var themeValue: TextView? = null
+    private var accentValue: TextView? = null
+    private var languagesValue: TextView? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         themeManager = KeyboardSettings(this)
@@ -85,40 +93,32 @@ class KeyboardSettingsActivity : Activity() {
                 // lowercased every page title. It said "keyboard" when this was one page of
                 // a launcher's settings and had a launcher's name above it somewhere; it is
                 // the whole application now, and the whole application is called WinBoard.
-                setTitle("winboard")
+                setTitle(
+                    when (pageId) {
+                        PAGE_THEME -> "theme"
+                        PAGE_ACCENT -> "accent color"
+                        PAGE_LANGUAGES -> "languages"
+                        else -> "winboard"
+                    }
+                )
                 onBack = { finish() }
             },
             wide()
         )
 
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        column.addView(setupSection, wide())
-        column.addView(section("theme"))
-        column.addView(themeChoices())
-        column.addView(accentRow())
-        column.addView(backgroundRow())
-        column.addView(section("languages"))
-        column.addView(languagesNote())
-        column.addView(languageList())
-        column.addView(section("typing"))
-        column.addView(autocorrectRow())
-        column.addView(autoCapsRow())
-        column.addView(holdRow())
-        column.addView(slideKeysRow())
-        column.addView(vibrationRow())
-        column.addView(soundRow())
-        column.addView(keyPreviewRow())
-        column.addView(joystickRow())
-        column.addView(numberRowRow())
-        column.addView(shortBottomRow())
-        column.addView(keyHeightRow())
-        column.addView(testBox())
-        column.addView(section("gifs"))
-        column.addView(giphyRow())
-        column.addView(section("dictation"))
-        column.addView(offlineVoiceRow())
-        column.addView(section("about"))
-        column.addView(about())
+        when (pageId) {
+            PAGE_THEME -> {
+                column.addView(themeChoices())
+                column.addView(testBox())
+            }
+            PAGE_ACCENT -> column.addView(accentRow())
+            PAGE_LANGUAGES -> {
+                column.addView(languagesNote())
+                column.addView(languageList())
+            }
+            else -> buildMain(column)
+        }
 
         page.addView(ScrollView(this).apply { addView(column, wide()) }, wide())
 
@@ -144,7 +144,74 @@ class KeyboardSettingsActivity : Activity() {
         }
 
         setContentView(page)
-        refreshSetup()
+        if (pageId == null) refreshSetup()
+    }
+
+    /**
+     * The main page. Theme, accent and languages are each a link to a page of their own: the
+     * theme pictures, twenty swatches and twenty-two languages made this one page long enough
+     * that the typing switches were a long scroll away.
+     */
+    private fun buildMain(column: LinearLayout) {
+        column.addView(setupSection, wide())
+        column.addView(section("appearance"))
+        column.addView(link("theme", "") { openPage(PAGE_THEME) }.also { themeValue = it.second }.first)
+        column.addView(link("accent color", "") { openPage(PAGE_ACCENT) }.also { accentValue = it.second }.first)
+        column.addView(backgroundRow())
+        column.addView(link("languages", "") { openPage(PAGE_LANGUAGES) }.also { languagesValue = it.second }.first)
+        refreshLinks()
+        column.addView(section("typing"))
+        column.addView(autocorrectRow())
+        column.addView(autoCapsRow())
+        column.addView(holdRow())
+        column.addView(slideKeysRow())
+        column.addView(vibrationRow())
+        column.addView(soundRow())
+        column.addView(keyPreviewRow())
+        column.addView(joystickRow())
+        column.addView(numberRowRow())
+        column.addView(shortBottomRow())
+        column.addView(keyHeightRow())
+        column.addView(testBox())
+        column.addView(section("gifs"))
+        column.addView(giphyRow())
+        column.addView(section("dictation"))
+        column.addView(offlineVoiceRow())
+        column.addView(section("about"))
+        column.addView(about())
+    }
+
+    /** Opens one of the sub-pages, which is this activity again with [EXTRA_PAGE] set. */
+    private fun openPage(id: String) {
+        startActivity(Intent(this, KeyboardSettingsActivity::class.java).putExtra(EXTRA_PAGE, id))
+    }
+
+    /**
+     * A row that leads to another page: the title, and what is chosen there underneath it.
+     *
+     * @return the row, and the line under the title so it can be refreshed on the way back.
+     */
+    private fun link(title: String, value: String, onTap: () -> Unit): Pair<View, TextView> {
+        val valueView = detail(value)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad(), pad() / 2, pad(), pad())
+            isClickable = true
+            TiltEffect.apply(this)
+            setOnClickListener { onTap() }
+            addView(label(title), wide())
+            addView(valueView, wide())
+        }
+        return row to valueView
+    }
+
+    /** What is chosen on each sub-page, said on the main page's link to it. */
+    private fun refreshLinks() {
+        themeValue?.text = KeyboardAppearance.theme(themeManager).title
+        val accent = themeManager.getAccent()
+        accentValue?.text = KeyboardSettings.ACCENTS.firstOrNull { it.second == accent }?.first ?: ""
+        val on = Layouts.ALL_LANGUAGES.filter { KeyboardLanguages.isEnabled(themeManager, it) }
+        languagesValue?.text = on.joinToString(", ") { it.name }
     }
 
     /**
@@ -157,7 +224,15 @@ class KeyboardSettingsActivity : Activity() {
      */
     override fun onResume() {
         super.onResume()
+        if (pageId != null) return
+        // Coming back from the accent or theme page: the page is painted from the palette at
+        // the moment it was built, so if that has changed it is built again.
+        if (KeyboardAppearance.palette(themeManager) != palette) {
+            recreate()
+            return
+        }
         refreshSetup()
+        refreshLinks()
     }
 
     // ---------------------------------------------------------------- setup
@@ -174,7 +249,7 @@ class KeyboardSettingsActivity : Activity() {
      * It is a block rather than a permanent section because it is scaffolding: once the
      * keyboard is on and in use there is nothing to say, and a settings page that opens with
      * two rows of congratulation every time is a page with a dead first screen. When both
-     * steps are done this empties itself and "theme" is what the page opens on.
+     * steps are done this empties itself and "appearance" is what the page opens on.
      */
     private val setupSection: LinearLayout by lazy {
         LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -268,7 +343,6 @@ class KeyboardSettingsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad(), pad() / 2, pad(), pad() / 2)
         }
-        column.addView(label("accent color"), wide())
         column.addView(
             detail(
                 "the word under your finger on the suggestion bar, shift while it is on, " +
@@ -405,7 +479,7 @@ class KeyboardSettingsActivity : Activity() {
             setPadding(pad(), pad() / 2, pad(), pad() / 2)
         }
         column.addView(
-            detail("tap one to try it. the box under key height is where you type on it."),
+            detail("tap one to try it. the box at the bottom is where you type on it."),
             wide()
         )
 
@@ -464,55 +538,10 @@ class KeyboardSettingsActivity : Activity() {
         )
     }
 
-    /**
-     * The languages, in a box of their own that scrolls.
-     *
-     * Twenty-two of them is longer than the rest of this page put together, and a list that
-     * long inside the page simply pushes everything else off the bottom - somebody looking
-     * for the autocorrect switch would scroll past Greek and Ukrainian to reach it. So the
-     * list gets a fixed height and scrolls inside itself, which also makes it *look* like a
-     * list of things to choose from rather than like the page having gone on too long.
-     *
-     * The height is a fraction of the screen rather than a number of rows: rows are as tall
-     * as the text in them and that changes with the language, and the point of the box is
-     * that the sections after it stay visible, which is a claim about the screen.
-     */
-    private fun languageList(): View {
-        val rows = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            for (layout in Layouts.ALL_LANGUAGES) addView(languageRow(layout), wide())
-        }
-
-        return object : ScrollView(this) {
-            // A scroller inside a scroller, both vertical. Without this the page takes the
-            // drag and the inner list never moves - the parent is entitled to intercept, and
-            // by default it does. Claiming the gesture on the way down and giving it back at
-            // the end means a drag that starts on a language scrolls the languages, and one
-            // that starts anywhere else scrolls the page.
-            override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-                parent?.requestDisallowInterceptTouchEvent(
-                    event.actionMasked != android.view.MotionEvent.ACTION_UP &&
-                        event.actionMasked != android.view.MotionEvent.ACTION_CANCEL
-                )
-                return super.onTouchEvent(event)
-            }
-        }.apply {
-            // A ScrollView takes focus when it is laid out, and the page scrolls to whatever
-            // has focus - which put the top of this box above the screen and took the heading
-            // that names it with it. The box is scrolled by dragging it; it has no business
-            // holding focus.
-            isFocusable = false
-            descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
-            isVerticalScrollBarEnabled = true
-            // The bar is what says "there is more below this". Without it a box that happens
-            // to end on a row boundary looks like the whole list.
-            isScrollbarFadingEnabled = false
-            addView(rows, wide())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                (resources.displayMetrics.heightPixels * LANGUAGE_LIST_SHARE).toInt()
-            )
-        }
+    /** The languages. A page of their own, so the list simply runs as long as it is. */
+    private fun languageList(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        for (layout in Layouts.ALL_LANGUAGES) addView(languageRow(layout), wide())
     }
 
     /**
@@ -1113,16 +1142,6 @@ class KeyboardSettingsActivity : Activity() {
 
     private fun dp(value: Float) = (value * resources.displayMetrics.density).toInt()
 
-    /**
-     * How much of the screen the language box takes.
-     *
-     * A little over a third: enough that four or five languages are visible at once, which is
-     * what makes it read as a list, and little enough that the "typing" heading underneath it
-     * is on screen at the same time - which is the whole reason the box exists.
-     */
-    private val LANGUAGE_LIST_SHARE = 0.45f
-
-
     /** The slider runs the range the setting allows, so its ends are the real limits. */
     private fun fractionOf(millis: Int): Float =
         (millis - KeyboardSettings.WB_HOLD_MIN).toFloat() /
@@ -1136,6 +1155,12 @@ class KeyboardSettingsActivity : Activity() {
     }
 
     private companion object {
+
+        /** Which sub-page to show. Absent for the main page. */
+        const val EXTRA_PAGE = "page"
+        const val PAGE_THEME = "theme"
+        const val PAGE_ACCENT = "accent"
+        const val PAGE_LANGUAGES = "languages"
 
         /** Where a GIPHY key comes from. See [giphyRow]. */
         const val GIPHY_DEVELOPERS = "https://developers.giphy.com/dashboard/"

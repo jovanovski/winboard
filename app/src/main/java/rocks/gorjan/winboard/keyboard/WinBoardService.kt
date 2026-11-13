@@ -90,6 +90,25 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
     /** Where the keyboard's own best word sits on the bar, with the emoji counted in. */
     private val correctionIndex: Int get() = 1 + emojiOffered
 
+    /**
+     * A clip that was copied moments ago, offered as the bar's only entry on an empty field.
+     *
+     * The paste button is a tap to open a list and another to pick from it, which is two taps
+     * too many for the overwhelmingly common case: copy something in one app, switch to
+     * another, paste it. So for [FRESH_CLIP_MS] after a copy, an empty field offers the clip
+     * itself, where the predictions would be. Null when the bar is showing anything else.
+     */
+    private var clipOffered: Clip? = null
+
+    /** When the last clip offered on the bar was used or dismissed, so it is not offered again. */
+    private var clipSpentAt = 0L
+
+    /** Takes the clip off the bar once it is no longer fresh. */
+    private val clipExpiry = Runnable { refreshCandidates() }
+
+    /** Whether the bar's [index] holds the fresh clip rather than a word. */
+    private fun isClipSlot(index: Int): Boolean = index == 0 && clipOffered != null
+
     /** Whether the bar's [index] holds an emoji rather than a word. */
     private fun isEmojiSlot(index: Int): Boolean = index in 1..emojiOffered
 
@@ -104,6 +123,32 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
     private fun offer(words: List<String>, emoji: Int = 0) {
         offered = words
         emojiOffered = emoji
+        clipOffered = null
+    }
+
+    /**
+     * The clip to offer on an empty field, or null.
+     *
+     * Only when the field really is empty - nothing before the cursor and nothing after it -
+     * because that is where a paste is what comes next. Anywhere else the predictions are
+     * more use, and the paste button is still there.
+     */
+    private fun freshClip(): Clip? {
+        val clip = ClipboardStore.latest(this) ?: return null
+        val age = System.currentTimeMillis() - clip.at
+        if (age !in 0 until FRESH_CLIP_MS || clip.at <= clipSpentAt) return null
+        val before = ask { currentInputConnection?.getTextBeforeCursor(1, 0) } ?: return null
+        val after = ask { currentInputConnection?.getTextAfterCursor(1, 0) } ?: return null
+        if (before.isNotEmpty() || after.isNotEmpty()) return null
+        onMain.removeCallbacks(clipExpiry)
+        onMain.postDelayed(clipExpiry, FRESH_CLIP_MS - age + 1)
+        return clip
+    }
+
+    /** What the clip looks like on the bar: one line, and not the whole of a long one. */
+    private fun clipLabel(clip: Clip): String {
+        val text = clip.display()
+        return if (text.length <= CLIP_LABEL_MAX) text else text.take(CLIP_LABEL_MAX - 1) + "\u2026"
     }
 
     /**
@@ -977,7 +1022,8 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
     // ---------------------------------------------------------------- keys
 
     override fun onKeyRepeat(view: KeyView) {
-        if (view.key.action == Action.BACKSPACE) backspace(repeating = true)
+        if (view.key.action != Action.BACKSPACE) return
+        if (searchingEmoji) backspaceEmojiSearch() else backspace(repeating = true)
     }
 
     /** The tick that answers a hold is [KeyView]'s; only what the hold *does* is here. */
@@ -1367,6 +1413,15 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
         val bar = host?.bar ?: return
         val typed = composer.typed
         if (typed.isEmpty()) {
+            // Something copied a moment ago, and an empty field to put it in: that is the
+            // offer, on its own. See [clipOffered].
+            freshClip()?.let { clip ->
+                val label = listOf(clipLabel(clip))
+                offer(label)
+                clipOffered = clip
+                bar.setWords(label, emphasised = -1)
+                return
+            }
             // Nothing typed: offer what tends to follow the last word. The shipped table has
             // an opinion from the first keystroke of a fresh install, and what has been
             // learned is merged over the top of it and wins where the two disagree.
@@ -1633,6 +1688,12 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
 
     /** A suggestion was tapped. */
     private fun takeSuggestion(index: Int) {
+        if (isClipSlot(index)) {
+            val clip = clipOffered ?: return
+            clipSpentAt = clip.at
+            paste(clip)
+            return
+        }
         val word = offered.getOrNull(index) ?: return
         if (isEmojiSlot(index)) {
             takeEmojiSuggestion(word)
@@ -1692,6 +1753,12 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
      * then leaving it means meeting it again tomorrow, spelled out of its own first letters.
      */
     private fun forgetSuggestion(index: Int) {
+        if (isClipSlot(index)) {
+            // Dragged away: not wanted here. It stays in the clipboard history.
+            clipOffered?.let { clipSpentAt = it.at }
+            refreshCandidates()
+            return
+        }
         val word = offered.getOrNull(index)?.takeIf { it.isNotBlank() } ?: return
         val dictionary = learned ?: return
 
@@ -2505,7 +2572,11 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
                 previousWord = null
             }
             built.onBackToLetters = { hideEmoji() }
-            built.onBackspace = { backspace() }
+            built.onBackspace = {
+                // While searching, the panel's own backspace edits the query like the one on
+                // the keys below it, rather than reaching past it into the text field.
+                if (searchingEmoji) backspaceEmojiSearch() else backspace()
+            }
             built.onSearchTapped = { startEmojiSearch() }
             built.onGifPicked = { sendGif(it) }
             emoji = built
@@ -2661,18 +2732,7 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
         when (view.key.action) {
             null -> panel.query += view.output()
             Action.SPACE -> panel.query += " "
-            Action.BACKSPACE -> {
-                if (panel.query.isEmpty()) {
-                    // Backspacing out of an empty search is how one leaves it, rather than it
-                    // being a dead key with nothing to delete. The panel goes back to its
-                    // full height and the keys go away with it.
-                    searchingEmoji = false
-                    panel.searchMode = false
-                    host?.showPanel(panel, withKeys = false)
-                } else {
-                    panel.query = panel.query.dropLast(1)
-                }
-            }
+            Action.BACKSPACE -> backspaceEmojiSearch()
             // Enter, or anything that changes the page, ends the search rather than being
             // swallowed by it.
             else -> {
@@ -2681,6 +2741,19 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
             }
         }
         return true
+    }
+
+    /**
+     * Takes a letter off the emoji search, and does nothing once it is empty.
+     *
+     * An empty box used to be how one left the search - the keys went away and the panel
+     * grew back - which meant a held backspace that ran past the last letter, or one tap too
+     * many, took the keyboard out from under the thumb. `abc` is the way out; backspace only
+     * ever deletes.
+     */
+    private fun backspaceEmojiSearch() {
+        val panel = emoji ?: return
+        if (panel.query.isNotEmpty()) panel.query = panel.query.dropLast(1)
     }
 
     // ---------------------------------------------------------------- pages
@@ -2966,6 +3039,12 @@ class WinBoardService : InputMethodService(), KeyView.Listener {
 
         /** How long a message stays on the bar before the suggestions come back. */
         const val MESSAGE_MS = 2_500L
+
+        /** How long after a copy the clip is offered on an empty field. See [clipOffered]. */
+        const val FRESH_CLIP_MS = 60_000L
+
+        /** How much of a clip the bar shows before cutting it off. */
+        const val CLIP_LABEL_MAX = 28
 
 
         /**
